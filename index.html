@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="cryptolab — engineering tool for cryptographic primitives. Generate test vectors, verify implementations, inspect ciphertexts.">
+<title>cryptolab — primitive-level cryptographic instrumentation</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+:root {
+    /* phosphor / terminal palette */
+    --bg-deep:     #0a0e0a;
+    --bg-panel:    #111813;
+    --bg-input:    #060a07;
+    --rule:        #1d2820;
+    --rule-bright: #2c3d2f;
+    --text:        #d4e4d8;
+    --text-dim:    #6f7e72;
+    --text-mute:   #4a5550;
+    --phosphor:    #5fff97;
+    --phosphor-dim:#3a9460;
+    --amber:       #ffb454;
+    --red:         #ff6b6b;
+    --blue:        #5bc0de;
+    --selection:   rgba(95, 255, 151, 0.18);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+    background: var(--bg-deep);
+    color: var(--text);
+    font-family: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+::selection { background: var(--selection); }
+
+/* hex grid background — subtle, instrument-panel */
+body::before {
+    content: "";
+    position: fixed; inset: 0; pointer-events: none;
+    background-image:
+        linear-gradient(rgba(95,255,151,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(95,255,151,0.025) 1px, transparent 1px);
+    background-size: 32px 32px;
+    z-index: 0;
+}
+/* glow scanline at the very top */
+body::after {
+    content: "";
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg,
+        transparent, var(--phosphor-dim) 30%, var(--phosphor-dim) 70%, transparent);
+    box-shadow: 0 0 20px var(--phosphor-dim);
+    pointer-events: none;
+    z-index: 100;
+    opacity: 0.4;
+}
+
+main {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 24px 28px 80px;
+    position: relative;
+    z-index: 1;
+}
+
+/* =================== HEADER =================== */
+header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 24px;
+    padding-bottom: 16px;
+    margin-bottom: 24px;
+    border-bottom: 1px solid var(--rule);
+    flex-wrap: wrap;
+}
+.brand {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+}
+.brand .glyph {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--phosphor);
+    letter-spacing: -0.02em;
+    text-shadow: 0 0 6px rgba(95,255,151,0.4);
+}
+.brand .name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+}
+.brand .sep { color: var(--text-mute); }
+.brand .meta {
+    font-size: 11px;
+    color: var(--text-mute);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.status-pill {
+    font-size: 11px;
+    color: var(--phosphor);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border: 1px solid var(--phosphor-dim);
+    border-radius: 0;
+}
+.status-pill .dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    background: var(--phosphor);
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+    box-shadow: 0 0 6px var(--phosphor);
+    animation: pulse 2s infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* =================== TABS =================== */
+.tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 24px;
+    border-bottom: 1px solid var(--rule);
+    overflow-x: auto;
+}
+.tab {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 14px 22px;
+    cursor: pointer;
+    transition: color 100ms;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    white-space: nowrap;
+}
+.tab:hover { color: var(--text); }
+.tab.active {
+    color: var(--phosphor);
+    border-bottom-color: var(--phosphor);
+}
+.tab .num {
+    color: var(--text-mute);
+    margin-right: 6px;
+    font-weight: 400;
+}
+.tab.active .num { color: var(--phosphor-dim); }
+
+/* =================== PANELS =================== */
+.panel { display: none; }
+.panel.active { display: block; animation: fade 200ms ease-out; }
+@keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+.panel-head {
+    margin-bottom: 16px;
+}
+.panel-head h2 {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: -0.01em;
+    margin-bottom: 4px;
+}
+.panel-head p {
+    font-size: 13px;
+    color: var(--text-dim);
+}
+
+/* card layout: each operation is a card */
+.cards {
+    display: grid;
+    gap: 16px;
+}
+
+.card {
+    background: var(--bg-panel);
+    border: 1px solid var(--rule);
+    overflow: hidden;
+}
+.card-head {
+    padding: 12px 18px;
+    background: rgba(95,255,151,0.02);
+    border-bottom: 1px solid var(--rule);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+.card-head .label {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--phosphor-dim);
+    font-weight: 600;
+}
+.card-head .label .num {
+    color: var(--text-mute);
+    margin-right: 8px;
+}
+.card-head .controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+.card-body { padding: 18px; }
+
+/* =================== INPUTS =================== */
+.field {
+    margin-bottom: 14px;
+}
+.field-row {
+    display: grid;
+    grid-template-columns: 130px 1fr;
+    gap: 14px;
+    align-items: start;
+    margin-bottom: 12px;
+}
+.field-row.tight { margin-bottom: 8px; }
+.field-label {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    padding-top: 8px;
+    line-height: 1.4;
+}
+.field-label .req { color: var(--amber); margin-left: 2px; }
+
+.input-wrap {
+    position: relative;
+}
+input[type="text"], input[type="password"], input[type="number"], textarea, select {
+    width: 100%;
+    background: var(--bg-input);
+    border: 1px solid var(--rule);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    padding: 8px 12px;
+    border-radius: 0;
+    transition: border-color 100ms;
+}
+textarea {
+    min-height: 70px;
+    resize: vertical;
+    font-size: 12px;
+    line-height: 1.5;
+    word-break: break-all;
+}
+input:focus, textarea:focus, select:focus {
+    outline: none;
+    border-color: var(--phosphor-dim);
+    box-shadow: 0 0 0 1px var(--phosphor-dim);
+}
+input:disabled, textarea:disabled, select:disabled { opacity: 0.4; cursor: not-allowed; }
+
+select {
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%236f7e72' d='M0 0l5 6 5-6z'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 30px;
+}
+
+.encoding-tabs {
+    display: flex;
+    border: 1px solid var(--rule);
+    border-bottom: none;
+    background: var(--bg-input);
+}
+.encoding-tab {
+    background: transparent;
+    border: none;
+    color: var(--text-mute);
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 5px 10px;
+    cursor: pointer;
+    transition: color 100ms, background 100ms;
+    border-right: 1px solid var(--rule);
+}
+.encoding-tab:last-child { border-right: none; }
+.encoding-tab:hover { color: var(--text); }
+.encoding-tab.active {
+    color: var(--phosphor);
+    background: rgba(95,255,151,0.06);
+}
+.encoding-tabs + textarea, .encoding-tabs + input {
+    border-top: none;
+}
+
+.field-meta {
+    font-size: 11px;
+    color: var(--text-mute);
+    margin-top: 4px;
+    letter-spacing: 0.04em;
+}
+.field-meta.error { color: var(--red); }
+.field-meta.ok { color: var(--phosphor-dim); }
+
+.field-meta .actions {
+    margin-left: 12px;
+    display: inline-flex;
+    gap: 8px;
+}
+.mini-btn {
+    background: transparent;
+    border: 1px solid var(--rule);
+    color: var(--text-dim);
+    font-family: inherit;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    cursor: pointer;
+    transition: all 100ms;
+}
+.mini-btn:hover {
+    border-color: var(--phosphor-dim);
+    color: var(--phosphor);
+}
+
+/* =================== RUN BUTTON =================== */
+.btn-run {
+    background: transparent;
+    border: 1px solid var(--phosphor-dim);
+    color: var(--phosphor);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    padding: 10px 22px;
+    cursor: pointer;
+    transition: all 150ms;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.btn-run:hover:not(:disabled) {
+    background: rgba(95,255,151,0.08);
+    box-shadow: 0 0 14px rgba(95,255,151,0.25), inset 0 0 12px rgba(95,255,151,0.08);
+}
+.btn-run:disabled {
+    opacity: 0.4;
+    cursor: wait;
+}
+.btn-run::before { content: '►'; font-size: 10px; }
+
+.btn-secondary {
+    background: transparent;
+    border: 1px solid var(--rule);
+    color: var(--text-dim);
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 8px 14px;
+    cursor: pointer;
+    transition: all 100ms;
+}
+.btn-secondary:hover {
+    border-color: var(--text-dim);
+    color: var(--text);
+}
+
+.btn-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--rule);
+}
+
+/* =================== OUTPUT =================== */
+.output-section {
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid var(--rule);
+}
+.output-block {
+    background: var(--bg-input);
+    border: 1px solid var(--rule);
+    padding: 12px 14px;
+    margin-bottom: 10px;
+}
+.output-label {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-mute);
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.output-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--phosphor);
+    word-break: break-all;
+    white-space: pre-wrap;
+}
+.output-value.dim { color: var(--text); }
+.output-value.error { color: var(--red); }
+.output-value .dimchar { color: var(--text-mute); }
+
+.params-table {
+    width: 100%;
+    font-size: 11px;
+    margin-top: 8px;
+}
+.params-table td {
+    padding: 3px 12px 3px 0;
+    color: var(--text-dim);
+}
+.params-table td:first-child {
+    color: var(--text-mute);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    width: 130px;
+}
+.params-table td:last-child {
+    color: var(--text);
+}
+
+.compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    margin-top: 12px;
+    border: 1px solid var(--rule);
+}
+.compare > div {
+    padding: 10px 14px;
+    border-right: 1px solid var(--rule);
+    font-size: 11px;
+}
+.compare > div:last-child { border-right: none; }
+.compare .header {
+    background: var(--bg-input);
+    color: var(--text-mute);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 10px;
+    border-bottom: 1px solid var(--rule);
+}
+
+/* =================== STATUS BANNER =================== */
+.banner {
+    padding: 10px 14px;
+    margin-top: 14px;
+    border: 1px solid;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.banner.ok      { border-color: var(--phosphor-dim); color: var(--phosphor); background: rgba(95,255,151,0.04); }
+.banner.warning { border-color: var(--amber);        color: var(--amber);    background: rgba(255,180,84,0.04); }
+.banner.error   { border-color: var(--red);          color: var(--red);      background: rgba(255,107,107,0.04); }
+
+.banner::before {
+    font-weight: 700;
+    font-family: monospace;
+    flex-shrink: 0;
+}
+.banner.ok::before      { content: '[OK]'; }
+.banner.warning::before { content: '[!]'; }
+.banner.error::before   { content: '[X]'; }
+
+/* =================== MISC =================== */
+.muted { color: var(--text-mute); }
+.dim { color: var(--text-dim); }
+.phosphor { color: var(--phosphor); }
+.warn { color: var(--amber); }
+.err { color: var(--red); }
+
+.kbd {
+    display: inline-block;
+    padding: 1px 6px;
+    background: var(--bg-input);
+    border: 1px solid var(--rule);
+    font-size: 11px;
+    color: var(--text-dim);
+    border-radius: 2px;
+}
+
+footer {
+    margin-top: 60px;
+    padding-top: 20px;
+    border-top: 1px solid var(--rule);
+    font-size: 11px;
+    color: var(--text-mute);
+    letter-spacing: 0.04em;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 14px;
+}
+footer a { color: var(--text-dim); text-decoration: none; }
+footer a:hover { color: var(--phosphor); }
+
+/* responsive */
+@media (max-width: 720px) {
+    main { padding: 16px 14px 60px; }
+    .field-row { grid-template-columns: 1fr; }
+    .field-label { padding-top: 0; }
+    .compare { grid-template-columns: 1fr; }
+    .compare > div { border-right: none; border-bottom: 1px solid var(--rule); }
+    .compare > div:last-child { border-bottom: none; }
+}
+
+/* For empty tabs as placeholders */
+.placeholder {
+    text-align: center;
+    color: var(--text-mute);
+    padding: 60px 20px;
+    border: 1px dashed var(--rule);
+    font-size: 13px;
+    letter-spacing: 0.04em;
+}
+.placeholder strong { color: var(--text-dim); }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+    <div class="brand">
+        <span class="glyph">[ ⌗ ]</span>
+        <span class="name">cryptolab</span>
+        <span class="sep">·</span>
+        <span class="meta">primitive instrumentation</span>
+    </div>
+    <div class="status-pill">
+        <span class="dot"></span>
+        <span id="readyText">SYSTEM READY</span>
+    </div>
+</header>
+
+<nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="symmetric"><span class="num">01</span>Symmetric</button>
+    <button class="tab" data-tab="aead"><span class="num">02</span>AEAD</button>
+    <button class="tab" data-tab="hash"><span class="num">03</span>Hash &amp; MAC</button>
+    <button class="tab" data-tab="kdf"><span class="num">04</span>KDF</button>
+    <button class="tab" data-tab="asymmetric"><span class="num">05</span>Asymmetric</button>
+    <button class="tab" data-tab="tools"><span class="num">06</span>Tools</button>
+</nav>
+
+<div id="panels"></div>
+
+<footer>
+    <span>cryptolab · primitive-level cryptographic instrumentation</span>
+    <span><a href="https://github.com/MahmoudSherif/cryptolab" target="_blank">source</a> · <span id="integrityHash" class="muted">computing integrity…</span></span>
+</footer>
+
+</main>
+
+<!-- vendored libraries (bundled) -->
+<script src="vendor/noble-hashes.js"></script>
+<script src="vendor/noble-curves.js"></script>
+<script src="vendor/noble-ciphers.js"></script>
+<!-- core modules -->
+<script src="core/encoding.js"></script>
+<script src="core/symmetric.js"></script>
+<script src="core/aead.js"></script>
+<script src="core/hash.js"></script>
+<script src="core/kdf.js"></script>
+<script src="core/asymmetric.js"></script>
+<!-- UI -->
+<script src="ui/components.js"></script>
+<script src="ui/tabs/symmetric.js"></script>
+<script src="ui/tabs/aead.js"></script>
+<script src="ui/tabs/hash.js"></script>
+<script src="ui/tabs/kdf.js"></script>
+<script src="ui/tabs/asymmetric.js"></script>
+<script src="ui/tabs/tools.js"></script>
+<script src="app.js"></script>
+
+</body>
+</html>

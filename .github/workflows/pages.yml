@@ -1,0 +1,83 @@
+name: deploy-pages
+
+# Publishes cryptolab to GitHub Pages.
+#
+# To enable: in your repo Settings → Pages, set "Source" to "GitHub Actions".
+# Then push to main and the site will appear at:
+#   https://<your-username>.github.io/<repo-name>/
+#
+# Because the entire app runs client-side, no build step or backend is
+# needed. We just upload the repo root as the site.
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one concurrent deployment, but don't cancel in-flight runs.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify INTEGRITY.txt is up to date
+        run: |
+          # Compute hash inline rather than calling verify.sh — keeps the
+          # check independent of script exit-code quirks.
+          EXPECTED=$(grep -oE '^[a-f0-9]{64}' INTEGRITY.txt | head -1)
+          ACTUAL=$(cat \
+            vendor/noble-hashes.js vendor/noble-curves.js vendor/noble-ciphers.js \
+            core/encoding.js core/symmetric.js core/aead.js \
+            core/hash.js core/kdf.js core/asymmetric.js \
+            ui/components.js \
+            ui/tabs/symmetric.js ui/tabs/aead.js ui/tabs/hash.js \
+            ui/tabs/kdf.js ui/tabs/asymmetric.js ui/tabs/tools.js \
+            app.js | sha256sum | awk '{print $1}')
+          echo "expected: $EXPECTED"
+          echo "actual:   $ACTUAL"
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "::error::INTEGRITY.txt is stale. Regenerate it locally:"
+            echo "  HASH=\$(cat vendor/noble-hashes.js vendor/noble-curves.js vendor/noble-ciphers.js \\"
+            echo "          core/encoding.js core/symmetric.js core/aead.js core/hash.js core/kdf.js core/asymmetric.js \\"
+            echo "          ui/components.js ui/tabs/symmetric.js ui/tabs/aead.js ui/tabs/hash.js \\"
+            echo "          ui/tabs/kdf.js ui/tabs/asymmetric.js ui/tabs/tools.js app.js | sha256sum | awk '{print \$1}')"
+            echo "  sed -i \"1s/^[a-f0-9]\\{64\\}/\$HASH/\" INTEGRITY.txt"
+            exit 1
+          fi
+          echo "INTEGRITY.txt matches the bundle."
+
+      - name: Stage site (exclude dev-only files)
+        run: |
+          mkdir -p _site
+          # Copy only what the deployed site actually needs.
+          cp index.html INTEGRITY.txt _site/
+          cp -r vendor core ui app.js _site/
+          # Keep verify.sh available alongside the deployed site so users
+          # can fetch it and run it locally against the URL.
+          cp verify.sh _site/
+          ls -la _site/
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload _site as artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

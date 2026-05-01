@@ -1,0 +1,30 @@
+ee281a576253e6ee288fa8a2f9e9ced1ae0105bc34fad1c29d69ee3337857f20  cryptolab
+
+This is the SHA-256 hash of all JavaScript loaded by cryptolab,
+in their load order:
+  vendor/noble-hashes.js
+  vendor/noble-curves.js
+  vendor/noble-ciphers.js
+  core/encoding.js
+  core/symmetric.js
+  core/aead.js
+  core/hash.js
+  core/kdf.js
+  core/asymmetric.js
+  ui/components.js
+  ui/tabs/symmetric.js
+  ui/tabs/aead.js
+  ui/tabs/hash.js
+  ui/tabs/kdf.js
+  ui/tabs/asymmetric.js
+  ui/tabs/tools.js
+  app.js
+
+# How to verify
+# Run:   bash verify.sh                                   # verify your local copy
+# Or:    bash verify.sh https://you.github.io/cryptolab/  # verify your deployed site
+# The deployed page also displays this hash in the footer (open dev tools to confirm
+# no other JS is being loaded).
+
+# When to regenerate
+# Whenever any file in the SCRIPTS list above changes (CI does this for you).
